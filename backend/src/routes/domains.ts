@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import prisma from '../lib/prisma.js';
+import { deleteReportsForUrl } from '../lib/report-storage.js';
 
 export const domainRoutes: FastifyPluginAsync = async (fastify) => {
   // Listar domínios com estatísticas agregadas
@@ -148,9 +149,19 @@ export const domainRoutes: FastifyPluginAsync = async (fastify) => {
     const domainId = parseInt(request.params.id, 10);
     if (isNaN(domainId)) return reply.status(400).send({ error: 'ID inválido' });
 
+    // Precisa dos IDs das URLs antes de apagar — o cascade do Prisma cuida
+    // das linhas no Postgres, mas os relatórios em disco de cada URL só
+    // podem ser limpos manualmente depois.
+    const urls = await prisma.url.findMany({
+      where: { domainId },
+      select: { id: true },
+    });
+
     await prisma.domain.delete({
       where: { id: domainId },
     });
+
+    await Promise.all(urls.map((u) => deleteReportsForUrl(u.id)));
 
     return { success: true };
   });

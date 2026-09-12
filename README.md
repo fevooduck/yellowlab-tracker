@@ -2,6 +2,8 @@
 
 Plataforma dedicada de diagnóstico técnico e arquitetura front-end baseada no **Yellow Lab Tools (v3.0.1)**, operando em contêineres Docker com foco absoluto em **clareza técnica, resolução ágil de problemas e exportação para o Microsoft Planner**.
 
+> Versão atual: **v1.1.0** — veja o [CHANGELOG.md](CHANGELOG.md) para o histórico completo. O projeto segue [SemVer](https://semver.org/lang/pt-BR/): a versão vive em sincronia nos três `package.json` (raiz, `backend/`, `frontend/`) e cada PR mergeado em `master` deve vir com bump de versão + entrada no changelog.
+
 ---
 
 ## 🎯 Por que esta ferramenta existe?
@@ -146,6 +148,25 @@ A ferramenta exibirá o resumo no próprio terminal, listando os Quick Wins e os
 
 ---
 
+## ⚙️ Variáveis de Ambiente Avançadas
+
+Todas opcionais — a ferramenta funciona sem elas, com os padrões abaixo:
+
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `MAX_CONCURRENT_AUDITS` | `1` | Quantas auditorias (Chromium) rodam de fato em paralelo. O padrão é 1 porque testamos 2 num ambiente Docker/WSL2 local e o Chromium ficou instável (`Target closed`). Só aumente se sua máquina tiver CPU/memória de sobra. |
+| `AUDIT_MAX_RETRIES` | `1` | Quantas vezes uma auditoria que falhou por motivo transitório (rede, crash pontual do Chromium) é tentada de novo automaticamente antes de marcar `FAILED`. `0` desativa o retry. |
+| `AUDIT_RETRY_DELAY_MS` | `3000` | Intervalo entre tentativas, em milissegundos. |
+| `REPORTS_DIR` | `<raiz do projeto>/ylt_reports` | Onde o JSON completo de cada auditoria é salvo em disco (ver seção abaixo). |
+
+### 📁 Onde ficam os relatórios completos
+
+O JSON completo de cada auditoria (`scoreProfiles`, `rules`, ofensores — pode passar de alguns MB) **não fica no Postgres**. Ele é salvo em arquivos locais na pasta `ylt_reports/` na raiz do projeto (um subdiretório por URL, `ylt_reports/url-<id>/`), fora do controle de versão (já está no `.gitignore`). O banco guarda só os scores resumidos e o caminho do arquivo. Excluir uma URL ou um domínio também remove os relatórios correspondentes em disco.
+
+> No Linux, como o container roda como root, os arquivos dentro de `ylt_reports/` ficam com dono `root` no host — para apagar a pasta manualmente pode ser preciso `sudo rm -rf ylt_reports/`.
+
+---
+
 ## 🔧 Comandos Frequentes
 
 | Ação | Comando |
@@ -165,6 +186,6 @@ A ferramenta exibirá o resumo no próprio terminal, listando os Quick Wins e os
 ## 🛡️ Solução de Problemas Comuns
 
 - **Erro de Chromium Sandbox:** O container já vem configurado com o wrapper `/usr/local/bin/chromium-no-sandbox` (flags `--no-sandbox --disable-gpu` e afins). Nunca remova essas flags em ambiente Docker. O `docker-compose.yml` também define `shm_size: 2gb` para evitar crashes do Chromium por falta de memória compartilhada — não reduza esse valor.
-- **Auditoria falha com "Target closed" / timeout:** sites reais podem levar bem mais que alguns segundos para serem totalmente auditados. O timeout do YellowLabTools em [backend/src/lib/ylt-runner.ts](backend/src/lib/ylt-runner.ts) está em 90s; se você auditar sites muito pesados e continuar vendo timeout, aumente esse valor.
+- **Auditoria falha com "Target closed" / timeout:** sites reais podem levar bem mais que alguns segundos para serem totalmente auditados. O timeout do YellowLabTools em [backend/src/lib/ylt-runner.ts](backend/src/lib/ylt-runner.ts) está em 90s; se você auditar sites muito pesados e continuar vendo timeout, aumente esse valor. Falhas transitórias já são retentadas automaticamente (`AUDIT_MAX_RETRIES`, ver seção de variáveis de ambiente acima).
 - **Porta 3020 já em uso:** Caso a porta 3020 esteja ocupada por outro serviço no seu sistema, altere a variável `PORT` no arquivo `.env` e no `docker-compose.yml`.
 - **Banco de dados não conecta:** Verifique se o container `db` está saudável rodando `docker compose ps`. A porta externa do banco é `5435` para não colidir com o Postgres padrão (`5432`) ou de outros projetos (`5438`, `5439`).

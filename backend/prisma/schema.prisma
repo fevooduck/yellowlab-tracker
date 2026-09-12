@@ -59,7 +59,12 @@ model YellowLabReport {
   jsScore           Int?
   cssScore          Int?
   serverConfigScore Int?
-  reportJson        Json
+  // O JSON completo do relatório (pode passar de alguns MB) é salvo em
+  // arquivo local (ver backend/src/lib/report-storage.ts), não no Postgres.
+  // reportPath guarda o caminho relativo do arquivo; reportJson fica como
+  // fallback só para relatórios antigos, gerados antes dessa mudança.
+  reportPath        String?     @db.Text
+  reportJson        Json?
   durationMs        Int?
   createdAt         DateTime    @default(now())
 
