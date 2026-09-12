@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import prisma from '../lib/prisma.js';
 import { runYellowLabAudit } from '../lib/ylt-runner.js';
 import { buildDeveloperActionPlan } from '../lib/action-plan.js';
+import { runQueued, getAuditQueueStats } from '../lib/audit-queue.js';
 
 function sanitizeJson(data: any) {
   try {
@@ -28,14 +29,17 @@ export const auditRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (!urlRecord) return reply.status(404).send({ error: 'URL não encontrada' });
 
-      // Atualiza status para RUNNING
-      await prisma.url.update({
-        where: { id: urlId },
-        data: { lastStatus: 'RUNNING' },
-      });
-
       try {
-        const result = await runYellowLabAudit(urlRecord.url, device);
+        // O status só vira RUNNING quando a auditoria de fato começa a
+        // executar (após adquirir a vaga na fila global) — evita mostrar
+        // "Auditando" para uma URL que ainda está só esperando a vez.
+        const result = await runQueued(async () => {
+          await prisma.url.update({
+            where: { id: urlId },
+            data: { lastStatus: 'RUNNING' },
+          });
+          return runYellowLabAudit(urlRecord.url, device);
+        });
 
         if (!result.success || !result.reportJson) {
           await prisma.url.update({
@@ -155,11 +159,14 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
       };
       activeDomainBatches.set(domainId, batchState);
 
-      // Processa assincronamente em lote com concorrência otimizada (2 workers paralelos)
+      // Processa assincronamente em lote. O paralelismo real (quantas auditorias
+      // rodam ao mesmo tempo) é controlado pela fila global em audit-queue.ts
+      // (MAX_CONCURRENT_AUDITS) — aqui só despachamos todas as URLs do lote,
+      // que aguardam a vez na fila junto com qualquer auditoria manual disparada
+      // em paralelo (inclusive de outros domínios).
       (async () => {
         let completed = 0;
         let failed = 0;
-        const CONCURRENCY = 2;
         let queueIndex = 0;
 
         async function worker() {
@@ -170,12 +177,15 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
             batchState.currentUrl = u.url;
 
             try {
-              await prisma.url.update({
-                where: { id: u.id },
-                data: { lastStatus: 'RUNNING' },
+              // Mesma lógica da rota individual: só marca RUNNING quando a
+              // vaga na fila global é de fato adquirida.
+              const result = await runQueued(async () => {
+                await prisma.url.update({
+                  where: { id: u.id },
+                  data: { lastStatus: 'RUNNING' },
+                });
+                return runYellowLabAudit(u.url, 'mobile');
               });
-
-              const result = await runYellowLabAudit(u.url, 'mobile');
 
               if (result.success && result.reportJson) {
                 const safeReportJson = sanitizeJson(result.reportJson);
@@ -233,10 +243,9 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
           }
         }
 
-        const workers = Array.from(
-          { length: Math.min(CONCURRENCY, urls.length) },
-          () => worker()
-        );
+        // Despacha um "worker" por URL do lote; o throttling real de execuções
+        // simultâneas de Chromium acontece dentro de runQueued.
+        const workers = Array.from({ length: urls.length }, () => worker());
         await Promise.all(workers);
 
         batchState.isRunning = false;
@@ -269,6 +278,7 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
           ...batch,
           percent,
           processed: batch.completed + batch.failed,
+          queue: getAuditQueueStats(),
         };
       }
 
