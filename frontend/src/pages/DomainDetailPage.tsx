@@ -15,14 +15,24 @@ export default function DomainDetailPage() {
   const [auditingUrls, setAuditingUrls] = useState<Record<number, boolean>>({});
   const [batchAuditing, setBatchAuditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDomain = async () => {
     try {
       const res = await fetch(`/api/domains/${domainId}`);
       const data = await res.json();
+
+      if (!res.ok) {
+        setDomain(null);
+        setError(data?.error || `Erro ao carregar domínio (HTTP ${res.status})`);
+        return;
+      }
+
       setDomain(data);
-    } catch (err) {
-      console.error(err);
+      setError(null);
+    } catch (err: any) {
+      setDomain(null);
+      setError(err?.message || 'Falha de conexão ao buscar o domínio.');
     } finally {
       setLoading(false);
     }
@@ -87,7 +97,31 @@ export default function DomainDetailPage() {
   }
 
   if (!domain) {
-    return <div className="p-12 text-center text-rose-400 text-sm">Domínio não encontrado.</div>;
+    return (
+      <div className="p-12 text-center space-y-3">
+        <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
+        <p className="text-rose-400 text-sm font-semibold">
+          {error || 'Domínio não encontrado.'}
+        </p>
+        <div className="flex justify-center gap-3 pt-1">
+          <button
+            onClick={() => {
+              setLoading(true);
+              fetchDomain();
+            }}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs"
+          >
+            Tentar novamente
+          </button>
+          <Link
+            to="/domains"
+            className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold rounded-xl text-xs"
+          >
+            Voltar para Domínios
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

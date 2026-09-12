@@ -21,18 +21,28 @@ export default function UrlDetailPage() {
   const [activeTab, setActiveTab] = useState<'plan' | 'plannerPdf' | 'diff' | 'rawJson'>('plan');
   const [diffData, setDiffData] = useState<any | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchUrlDetails = async () => {
     try {
       const res = await fetch(`/api/urls/${urlId}`);
       const data = await res.json();
+
+      if (!res.ok) {
+        setUrlData(null);
+        setError(data?.error || `Erro ao carregar URL (HTTP ${res.status})`);
+        return;
+      }
+
       setUrlData(data);
+      setError(null);
 
       if (data.reports && data.reports.length > 0) {
         setSelectedReportId(data.reports[0].id);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setUrlData(null);
+      setError(err?.message || 'Falha de conexão ao buscar a URL.');
     } finally {
       setLoading(false);
     }
@@ -106,7 +116,31 @@ export default function UrlDetailPage() {
   }
 
   if (!urlData) {
-    return <div className="p-12 text-center text-rose-400 text-sm">URL não encontrada.</div>;
+    return (
+      <div className="p-12 text-center space-y-3">
+        <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
+        <p className="text-rose-400 text-sm font-semibold">
+          {error || 'URL não encontrada.'}
+        </p>
+        <div className="flex justify-center gap-3 pt-1">
+          <button
+            onClick={() => {
+              setLoading(true);
+              fetchUrlDetails();
+            }}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs"
+          >
+            Tentar novamente
+          </button>
+          <Link
+            to="/urls"
+            className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold rounded-xl text-xs"
+          >
+            Voltar para URLs
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const latestReport = reportDetails?.report || null;
