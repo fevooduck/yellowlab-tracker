@@ -17,6 +17,30 @@ Diferente de métricas genéricas de Lighthouse ou PageSpeed que apenas apontam 
 
 ---
 
+## 📸 Telas da Plataforma
+
+> As telas abaixo usam dados fictícios (`loja-exemplo.com.br`) apenas para ilustração.
+
+**Visão Geral (Dashboard)** — resumo dos domínios monitorados e média global de saúde.
+![Dashboard](docs/screenshots/01-dashboard.png)
+
+**Domínios Monitorados** — listagem e busca dos domínios cadastrados.
+![Domínios](docs/screenshots/02-domains.png)
+
+**Detalhe do Domínio** — URLs cadastradas, status, score e progresso de auditoria em lote.
+![Detalhe do Domínio](docs/screenshots/03-domain-detail.png)
+
+**Diagnóstico Dev-First** — as 6 dimensões de saúde e o plano de ação técnica (Quick Wins, Otimizações Médias, Mudanças Estruturais).
+![Diagnóstico da URL](docs/screenshots/04-url-diagnostico.png)
+
+**Comparativo (Evolução / Diff)** — variação de score entre duas auditorias, para validar se um deploy melhorou ou piorou a nota.
+![Comparativo](docs/screenshots/05-comparativo.png)
+
+**Exportação para Microsoft Planner (PDF)** — relatório formatado com checklist pronto para anexar em tarefas do time.
+![Exportação para Planner](docs/screenshots/06-planner-pdf.png)
+
+---
+
 ## 🛠️ Stack Tecnológica
 
 | Camada | Tecnologia | Detalhes |
