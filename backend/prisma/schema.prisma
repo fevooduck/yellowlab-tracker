@@ -1,0 +1,67 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuditStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model Domain {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  label       String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  urls        Url[]
+
+  @@index([name])
+}
+
+model Url {
+  id          Int               @id @default(autoincrement())
+  url         String            @unique
+  label       String?
+  category    String            @default("Geral")
+  domainId    Int
+  domain      Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  isActive    Boolean           @default(true)
+  lastStatus  AuditStatus       @default(PENDING)
+  lastRunAt   DateTime?
+  lastScore   Int?
+  lastError   String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  reports     YellowLabReport[]
+
+  @@index([domainId])
+  @@index([lastStatus])
+}
+
+model YellowLabReport {
+  id                Int         @id @default(autoincrement())
+  urlId             Int
+  url               Url         @relation(fields: [urlId], references: [id], onDelete: Cascade)
+  score             Int?
+  pageWeightScore   Int?
+  requestsScore     Int?
+  domScore          Int?
+  jsScore           Int?
+  cssScore          Int?
+  serverConfigScore Int?
+  reportJson        Json
+  durationMs        Int?
+  createdAt         DateTime    @default(now())
+
+  @@index([urlId, createdAt(sort: Desc)])
+}

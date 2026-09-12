@@ -1,0 +1,45 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    shm_size: 2gb
+    init: true
+    ports:
+      - "3020:3020"
+      - "3021:3021"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - /app/frontend/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3020
+      API_PORT: 3021
+      DATABASE_URL: postgresql://user:password@db:5432/ylt_tracker?schema=public
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PHANTOMAS_CHROMIUM_EXECUTABLE: /usr/local/bin/chromium-no-sandbox
+    command: npm run dev
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ylt_tracker
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d ylt_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
