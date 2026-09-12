@@ -3,6 +3,7 @@ import prisma from '../lib/prisma.js';
 import { runYellowLabAudit } from '../lib/ylt-runner.js';
 import { buildDeveloperActionPlan } from '../lib/action-plan.js';
 import { runQueued, getAuditQueueStats } from '../lib/audit-queue.js';
+import { saveReportJson, readReportJson } from '../lib/report-storage.js';
 
 function sanitizeJson(data: any) {
   try {
@@ -56,6 +57,9 @@ export const auditRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         const safeReportJson = sanitizeJson(result.reportJson);
+        // O JSON completo vai para arquivo local, não para o Postgres — só o
+        // caminho é salvo no banco (ver backend/src/lib/report-storage.ts).
+        const reportPath = await saveReportJson(urlRecord.id, safeReportJson);
 
         // Cria o registro da auditoria
         const report = await prisma.yellowLabReport.create({
@@ -68,7 +72,7 @@ export const auditRoutes: FastifyPluginAsync = async (fastify) => {
             jsScore: result.jsScore,
             cssScore: result.cssScore,
             serverConfigScore: result.serverConfigScore,
-            reportJson: safeReportJson,
+            reportPath,
             durationMs: result.durationMs,
           },
         });
@@ -189,6 +193,7 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
 
               if (result.success && result.reportJson) {
                 const safeReportJson = sanitizeJson(result.reportJson);
+                const reportPath = await saveReportJson(u.id, safeReportJson);
 
                 await prisma.yellowLabReport.create({
                   data: {
@@ -200,7 +205,7 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
                     jsScore: result.jsScore,
                     cssScore: result.cssScore,
                     serverConfigScore: result.serverConfigScore,
-                    reportJson: safeReportJson,
+                    reportPath,
                     durationMs: result.durationMs,
                   },
                 });
@@ -329,7 +334,21 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
 
       if (!report) return reply.status(404).send({ error: 'Relatório não encontrado' });
 
-      const actionPlan = buildDeveloperActionPlan(report.reportJson, report.score ?? 0);
+      // Relatórios novos guardam o JSON completo em arquivo local
+      // (reportPath); relatórios antigos, gerados antes dessa mudança,
+      // ainda têm o JSON direto na coluna reportJson.
+      let fullJson: any = null;
+      if (report.reportPath) {
+        try {
+          fullJson = await readReportJson(report.reportPath);
+        } catch (e) {
+          fastify.log.error(`Falha ao ler relatório em disco (${report.reportPath}): ${e}`);
+        }
+      } else {
+        fullJson = report.reportJson;
+      }
+
+      const actionPlan = buildDeveloperActionPlan(fullJson, report.score ?? 0);
 
       return {
         report: {
@@ -348,7 +367,7 @@ const activeDomainBatches = new Map<number, DomainBatchState>();
           serverConfigScore: report.serverConfigScore,
           durationMs: report.durationMs,
           createdAt: report.createdAt,
-          fullJson: report.reportJson,
+          fullJson,
         },
         actionPlan,
       };

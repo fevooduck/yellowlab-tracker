@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "npx prisma generate && npx prisma migrate deploy && tsx watch src/server.ts",

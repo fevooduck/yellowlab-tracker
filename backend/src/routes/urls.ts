@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import prisma from '../lib/prisma.js';
+import { deleteReportsForUrl } from '../lib/report-storage.js';
 
 export const urlRoutes: FastifyPluginAsync = async (fastify) => {
   // Listar todas as URLs
@@ -217,6 +218,10 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
     await prisma.url.delete({
       where: { id: urlId },
     });
+
+    // Remove os relatórios em disco dessa URL (os registros no Postgres já
+    // saíram em cascata via onDelete: Cascade do Prisma).
+    await deleteReportsForUrl(urlId);
 
     return { success: true };
   });
