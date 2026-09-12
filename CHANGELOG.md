@@ -6,6 +6,11 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-12
+
+### Added
+- `BACKLOG.md`: plano detalhado dos itens de melhoria ainda não implementados (toasts/hook `useApi`, seed/backup, logs estruturados, paginação, validação de host), para retomar em qualquer sessão futura.
+
 ## [1.1.0] - 2026-09-12
 
 ### Added

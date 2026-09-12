@@ -2,7 +2,7 @@
 
 Plataforma dedicada de diagnóstico técnico e arquitetura front-end baseada no **Yellow Lab Tools (v3.0.1)**, operando em contêineres Docker com foco absoluto em **clareza técnica, resolução ágil de problemas e exportação para o Microsoft Planner**.
 
-> Versão atual: **v1.1.0** — veja o [CHANGELOG.md](CHANGELOG.md) para o histórico completo. O projeto segue [SemVer](https://semver.org/lang/pt-BR/): a versão vive em sincronia nos três `package.json` (raiz, `backend/`, `frontend/`) e cada PR mergeado em `master` deve vir com bump de versão + entrada no changelog.
+> Versão atual: **v1.1.1** — veja o [CHANGELOG.md](CHANGELOG.md) para o histórico completo e o [BACKLOG.md](BACKLOG.md) para as próximas melhorias planejadas. O projeto segue [SemVer](https://semver.org/lang/pt-BR/): a versão vive em sincronia nos três `package.json` (raiz, `backend/`, `frontend/`) e cada PR mergeado em `master` deve vir com bump de versão + entrada no changelog.
 
 ---
 
