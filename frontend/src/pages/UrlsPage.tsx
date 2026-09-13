@@ -2,23 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Link2, Globe, Search, Play, RefreshCw, ExternalLink, ArrowRight } from 'lucide-react';
 import ScoreBadge from '../components/ScoreBadge';
+import { useApi } from '../hooks/useApi';
+import { useToast } from '../components/Toast';
 
 export default function UrlsPage() {
-  const [urls, setUrls] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, request } = useApi<any[]>([]);
+  const urls = Array.isArray(data) ? data : [];
+  // Instância separada para as auditorias — evita que a resposta da ação
+  // sobrescreva a lista de URLs guardada em `data`.
+  const { request: requestAction } = useApi();
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [auditingUrls, setAuditingUrls] = useState<Record<number, boolean>>({});
 
   const fetchUrls = async () => {
     try {
-      const res = await fetch('/api/urls');
-      const data = await res.json();
-      setUrls(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      await request('/api/urls');
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 
@@ -29,12 +31,10 @@ export default function UrlsPage() {
   const handleAuditSingle = async (urlId: number) => {
     setAuditingUrls((prev) => ({ ...prev, [urlId]: true }));
     try {
-      const res = await fetch(`/api/audit/url/${urlId}`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) alert(data.error || 'Erro ao auditar URL');
+      await requestAction(`/api/audit/url/${urlId}`, { method: 'POST' });
       fetchUrls();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'Erro ao auditar URL');
     } finally {
       setAuditingUrls((prev) => ({ ...prev, [urlId]: false }));
     }

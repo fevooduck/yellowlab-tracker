@@ -3,23 +3,26 @@ import { Link } from 'react-router-dom';
 import { Globe, Plus, Search, Trash2, Edit, ArrowRight, ExternalLink } from 'lucide-react';
 import ScoreBadge from '../components/ScoreBadge';
 import DomainModal from '../components/DomainModal';
+import { useApi } from '../hooks/useApi';
+import { useToast, useConfirm } from '../components/Toast';
 
 export default function DomainsPage() {
-  const [domains, setDomains] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, request } = useApi<any[]>([]);
+  const domains = Array.isArray(data) ? data : [];
+  // Instância separada para ações (delete) — evita que a resposta da mutação
+  // sobrescreva a lista de domínios guardada em `data`.
+  const { request: requestAction } = useApi();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [domainToEdit, setDomainToEdit] = useState<any | null>(null);
 
   const fetchDomains = async () => {
     try {
-      const res = await fetch('/api/domains');
-      const data = await res.json();
-      setDomains(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      await request('/api/domains');
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 
@@ -28,15 +31,18 @@ export default function DomainsPage() {
   }, []);
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Tem certeza que deseja excluir o domínio "${name}" e todas as suas URLs e análises?`)) {
-      return;
-    }
+    const confirmed = await confirm(
+      `Tem certeza que deseja excluir o domínio "${name}" e todas as suas URLs e análises?`,
+      { title: 'Excluir domínio', confirmLabel: 'Excluir' }
+    );
+    if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/domains/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchDomains();
-    } catch (err) {
-      console.error(err);
+      await requestAction(`/api/domains/${id}`, { method: 'DELETE' });
+      toast.success(`Domínio "${name}" excluído.`);
+      fetchDomains();
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 
