@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import { Globe, Link2, Zap, ArrowRight, Activity, Plus, Search, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import ScoreBadge from '../components/ScoreBadge';
 import DomainModal from '../components/DomainModal';
+import { useApi } from '../hooks/useApi';
+import { useToast } from '../components/Toast';
 
 export default function DashboardPage() {
-  const [domains, setDomains] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, request } = useApi<any[]>([]);
+  const domains = Array.isArray(data) ? data : [];
+  const toast = useToast();
   const [isDomainModalOpen, setIsDomainModalOpen] = useState(false);
   const [quickUrl, setQuickUrl] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
@@ -14,13 +17,9 @@ export default function DashboardPage() {
 
   const fetchDomains = async () => {
     try {
-      const res = await fetch('/api/domains');
-      const data = await res.json();
-      setDomains(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      await request('/api/domains');
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 

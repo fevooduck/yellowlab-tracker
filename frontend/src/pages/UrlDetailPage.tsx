@@ -9,9 +9,11 @@ import ScoreGauge from '../components/ScoreGauge';
 import ActionPlanTabs from '../components/ActionPlanTabs';
 import PdfReportView from '../components/PdfReportView';
 import { SingleAuditProgressBar } from '../components/AuditProgressBar';
+import { useToast } from '../components/Toast';
 
 export default function UrlDetailPage() {
   const { urlId } = useParams<{ urlId: string }>();
+  const toast = useToast();
   const [urlData, setUrlData] = useState<any | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [reportDetails, setReportDetails] = useState<any | null>(null);
@@ -82,7 +84,7 @@ export default function UrlDetailPage() {
         setSelectedReportId(data.report.id);
       }
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message);
     } finally {
       setAuditing(false);
     }

@@ -5,9 +5,12 @@ import ScoreBadge from '../components/ScoreBadge';
 import UrlModal from '../components/UrlModal';
 import BatchUrlModal from '../components/BatchUrlModal';
 import { DomainAuditProgressBar } from '../components/AuditProgressBar';
+import { useToast, useConfirm } from '../components/Toast';
 
 export default function DomainDetailPage() {
   const { domainId } = useParams<{ domainId: string }>();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [domain, setDomain] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
@@ -47,10 +50,10 @@ export default function DomainDetailPage() {
     try {
       const res = await fetch(`/api/audit/url/${urlId}`, { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) alert(data.error || 'Erro ao auditar URL');
+      if (!res.ok) toast.error(data.error || 'Erro ao auditar URL');
       fetchDomain();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message);
     } finally {
       setAuditingUrls((prev) => ({ ...prev, [urlId]: false }));
     }
@@ -76,19 +79,28 @@ export default function DomainDetailPage() {
         setBatchAuditing(false);
       }, 20000);
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message);
       setBatchAuditing(false);
     }
   };
 
   const handleDeleteUrl = async (urlId: number, urlStr: string) => {
-    if (!confirm(`Excluir URL "${urlStr}" e todo o seu histórico de análises?`)) return;
+    const confirmed = await confirm(`Excluir URL "${urlStr}" e todo o seu histórico de análises?`, {
+      title: 'Excluir URL',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
-      await fetch(`/api/urls/${urlId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/urls/${urlId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Erro ao excluir URL');
+      }
+      toast.success(`URL "${urlStr}" excluída.`);
       fetchDomain();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 

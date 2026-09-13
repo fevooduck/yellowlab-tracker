@@ -6,6 +6,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-13
+
+### Added
+- `frontend/src/hooks/useApi.ts`: hook que encapsula fetch + checagem de `res.ok` + estados de `loading`/`error`/`data`, adotado em `DashboardPage`, `DomainsPage` e `UrlsPage` (essas três páginas não checavam `res.ok`, então erros reais da API ficavam escondidos do usuário).
+- `frontend/src/components/Toast.tsx`: `ToastProvider` + `useToast()`/`useConfirm()`, substituindo `alert()`/`confirm()` nativos do browser (quebravam a identidade visual escura da ferramenta e bloqueavam a thread) em `UrlsPage`, `UrlDetailPage`, `DomainsPage` e `DomainDetailPage`.
+
+### Changed
+- Registrada no `BACKLOG.md` a ideia de capturar Core Web Vitals (LCP/CLS/INP via `web-vitals`) como complemento ao score do YLT — melhoria futura, não bloqueia os itens já planejados.
+
 ## [1.1.1] - 2026-09-12
 
 ### Added
