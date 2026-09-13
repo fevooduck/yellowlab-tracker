@@ -75,6 +75,14 @@ Continuação do levantamento de melhorias feito em 2026-09-12 (uso 100% local, 
 
 **Esforço:** baixo, mas só vale a pena se o contexto de uso mudar.
 
+### 6. Core Web Vitals (LCP/CLS/INP) como complemento ao score do YLT (nota de baixa prioridade)
+
+**Por quê:** o score do YellowLabTools cobre peso de página, complexidade de DOM/JS/CSS etc., mas não métricas reais de experiência de carregamento/interação. Capturar LCP, CLS e INP via `web-vitals` durante a própria auditoria (a página já é aberta no Chromium headless pelo Puppeteer/YLT) daria um sinal complementar sem precisar trocar de engine nem mexer na arquitetura atual — surgiu de uma segunda opinião externa (`SUGGESTION.md`, descartada porque partia de um diagnóstico que não bate com este código: o projeto já roda o YLT localmente, sem fila pública) que ainda tinha essa ideia isolada de aproveitável.
+
+**Abordagem sugerida (se for implementar):** injetar o script do pacote `web-vitals` na página já aberta pelo Puppeteer em `ylt-runner.ts`, coletar os valores via `page.evaluate`/`exposeFunction` e gravar como colunas/campo extra no relatório, ao lado do score do YLT (não em substituição).
+
+**Esforço:** baixo-médio, mas é melhoria futura — não bloqueia nem depende dos itens 1-5.
+
 ---
 
 ## Como continuar
