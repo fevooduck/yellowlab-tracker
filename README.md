@@ -100,30 +100,45 @@ Abra no seu navegador:
 
 ---
 
-## 🔄 Como Atualizar o Ambiente (Sem Perda de Dados)
+## 🔄 Como Atualizar para uma Nova Versão (Para quem já baixou o projeto)
 
-Ao atualizar o código para obter novas funcionalidades (como o resgate de Sitemap XML) ou correções, siga o procedimento abaixo no terminal do WSL/Linux para atualizar os contêineres **sem nenhum risco de perda do banco de dados ou histórico de auditorias**:
+Se você já possui o **YellowLab Tracker** instalado e rodando na sua máquina, siga este passo a passo para atualizar o seu ambiente assim que a nova versão estiver disponível na branch principal (`main` ou `master`).
 
-### 1. Puxar a nova versão do repositório
+> 🛡️ **Garantia de Preservação dos Dados:**
+> Todo o seu histórico de auditorias, pontuações, domínios e URLs cadastradas **permanece 100% intacto**. O banco de dados PostgreSQL vive isolado no volume persistente do Docker (`postgres_data`) e os relatórios ficam salvos na pasta local `ylt_reports/`.
+
+---
+
+### Passo a Passo de Atualização (Terminal WSL / Linux)
+
+#### 1. Puxar a nova versão da branch principal
+Na pasta raiz do projeto:
 ```bash
-git checkout feature/sitemap-url-import   # ou a branch desejada / git pull origin master
+git checkout main
+git pull origin main
 ```
+*(Caso o repositório utilize a branch `master`, basta usar `git checkout master && git pull origin master`)*
 
-### 2. Reconstruir e reiniciar os contêineres
-Execute:
+#### 2. Reconstruir a aplicação com a nova versão
+Execute o comando abaixo para atualizar as dependências e o código da aplicação:
 ```bash
 docker compose up -d --build
 ```
-> 💡 **Dica (atualização expressa):** Se quiser reconstruir somente o container da aplicação sem sequer reiniciar o PostgreSQL:
+> 💡 **Dica (opcional):** Se preferir reconstruir somente o container da aplicação sem reiniciar o PostgreSQL:
 > ```bash
 > docker compose up -d --build app
 > ```
 
-### ⚠️ Regra de Ouro para Preservação dos Dados
-- **NUNCA use `docker compose down -v`**: A flag `-v` (`--volumes`) apaga os volumes do Docker e **destruiria permanentemente o banco de dados PostgreSQL**!
-- O banco de dados (domínios, URLs cadastradas, scores e histórico) é armazenado com persistência no volume Docker `postgres_data`.
-- Os arquivos detalhados brutos dos relatórios do YellowLabTools ficam salvos localmente na pasta `ylt_reports/`.
-- O comando padrão `docker compose up -d --build` atualiza a imagem e os pacotes do Node.js, compila as alterações e reaplica as migrações automaticamente, **preservando 100% dos dados existentes**.
+As migrações do banco de dados são aplicadas **automaticamente** na inicialização do backend.
+
+Pronto! Acesse **[http://localhost:3020](http://localhost:3020)** e a nova versão já estará ativa com todas as novidades e seus dados anteriores preservados.
+
+---
+
+### ⚠️ O que você NUNCA deve rodar:
+- **NUNCA execute `docker compose down -v`** (ou `docker compose down --volumes`).
+  - O parâmetro `-v` instrui o Docker a deletar os volumes de dados persistentes, o que apagaria permanentemente o banco de dados.
+- O comando padrão `docker compose up -d --build` (ou apenas `docker compose down` sem a flag `-v`) **não remove volumes** e é 100% seguro.
 
 ---
 
