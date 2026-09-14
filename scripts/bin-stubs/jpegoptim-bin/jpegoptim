@@ -1,0 +1,9 @@
+#!/bin/sh
+# jpegoptim 1.4.x (Debian bookworm) exige argumento de arquivo mesmo com --stdin
+# ("file argument(s) missing"); o imagemin-jpegoptim não passa nenhum. Acrescenta "-".
+for arg in "$@"; do
+  if [ "$arg" = "--stdin" ]; then
+    exec jpegoptim "$@" -
+  fi
+done
+exec jpegoptim "$@"

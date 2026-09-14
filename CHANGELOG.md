@@ -6,6 +6,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), 
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-14
+
+### Fixed
+- Build Docker quebrava em máquinas **arm64** (Mac com Apple Silicon, Linux ARM) no `npm install` do backend: `optipng-bin`, `jpegtran-bin` e `jpegoptim-bin` (via `imagemin-*` do YellowLabTools) só têm binário pronto para x86/x64 e tentavam compilar do código-fonte, o que falhava. Agora esses três pacotes são substituídos via `overrides` por stubs locais (`scripts/bin-stubs/`) que apontam para `optipng`, `jpegtran` (`libjpeg-turbo-progs`) e `jpegoptim` instalados pelo apt no `Dockerfile`, funcionando igual em amd64 e arm64 e sem compilar nada no build.
+- O `jpegoptim` 1.4.x do Debian bookworm exige argumento de arquivo mesmo com `--stdin`; o stub usa um wrapper que acrescenta `-` para a otimização de JPEG continuar funcionando.
+
 ## [1.2.0] - 2026-09-13
 
 ### Added
