@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Layers, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Layers, AlertCircle, CheckCircle, FileCode } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -7,6 +7,7 @@ interface Props {
   onSuccess: () => void;
   domainId: number;
   domainName: string;
+  onOpenSitemap?: () => void;
 }
 
 export default function BatchUrlModal({
@@ -15,6 +16,7 @@ export default function BatchUrlModal({
   onSuccess,
   domainId,
   domainName,
+  onOpenSitemap,
 }: Props) {
   const [urlsText, setUrlsText] = useState('');
   const [category, setCategory] = useState('Geral');
@@ -88,6 +90,25 @@ export default function BatchUrlModal({
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-sm flex items-center gap-2">
               <CheckCircle className="w-4 h-4 shrink-0" />
               {result.createdCount} URLs cadastradas com sucesso! ({result.skippedCount} ignoradas por duplicidade)
+            </div>
+          )}
+
+          {onOpenSitemap && (
+            <div className="p-3 bg-slate-900/60 border border-slate-700/80 rounded-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-slate-300">
+                <FileCode className="w-4 h-4 text-yellow-400 shrink-0" />
+                <span>Prefere resgatar as URLs do site automaticamente?</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenSitemap();
+                }}
+                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold rounded-lg text-xs shrink-0 transition-colors"
+              >
+                Do Sitemap XML
+              </button>
             </div>
           )}
 

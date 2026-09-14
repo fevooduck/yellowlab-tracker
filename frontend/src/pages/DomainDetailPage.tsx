@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Globe, Plus, Layers, Play, ArrowLeft, Link2, Clock, Trash2, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
+import { Globe, Plus, Layers, Play, ArrowLeft, Link2, Clock, Trash2, ExternalLink, RefreshCw, AlertCircle, FileCode } from 'lucide-react';
 import ScoreBadge from '../components/ScoreBadge';
 import UrlModal from '../components/UrlModal';
 import BatchUrlModal from '../components/BatchUrlModal';
+import SitemapImportModal from '../components/SitemapImportModal';
 import { DomainAuditProgressBar } from '../components/AuditProgressBar';
 import { useToast, useConfirm } from '../components/Toast';
 
@@ -15,6 +16,7 @@ export default function DomainDetailPage() {
   const [loading, setLoading] = useState(true);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isSitemapModalOpen, setIsSitemapModalOpen] = useState(false);
   const [auditingUrls, setAuditingUrls] = useState<Record<number, boolean>>({});
   const [batchAuditing, setBatchAuditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -180,6 +182,12 @@ export default function DomainDetailPage() {
             <Layers className="w-4 h-4" /> Importar Lote
           </button>
           <button
+            onClick={() => setIsSitemapModalOpen(true)}
+            className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-colors"
+          >
+            <FileCode className="w-4 h-4 text-yellow-400" /> Resgatar Sitemap
+          </button>
+          <button
             onClick={handleAuditAll}
             disabled={batchAuditing || domain.urls.length === 0}
             className="px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-yellow-500/20 transition-all active:scale-95 disabled:opacity-50"
@@ -214,7 +222,7 @@ export default function DomainDetailPage() {
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
               Adicione links específicos ou importe uma lista completa de páginas para auditar.
             </p>
-            <div className="flex justify-center gap-3 pt-2">
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
               <button
                 onClick={() => setIsUrlModalOpen(true)}
                 className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold rounded-xl text-xs"
@@ -226,6 +234,12 @@ export default function DomainDetailPage() {
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs"
               >
                 Importar em Massa
+              </button>
+              <button
+                onClick={() => setIsSitemapModalOpen(true)}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
+              >
+                <FileCode className="w-3.5 h-3.5 text-yellow-400" /> Do Sitemap XML
               </button>
             </div>
           </div>
@@ -358,6 +372,15 @@ export default function DomainDetailPage() {
       <BatchUrlModal
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
+        onSuccess={fetchDomain}
+        domainId={domain.id}
+        domainName={domain.name}
+        onOpenSitemap={() => setIsSitemapModalOpen(true)}
+      />
+
+      <SitemapImportModal
+        isOpen={isSitemapModalOpen}
+        onClose={() => setIsSitemapModalOpen(false)}
         onSuccess={fetchDomain}
         domainId={domain.id}
         domainName={domain.name}

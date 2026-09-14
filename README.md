@@ -15,6 +15,7 @@ Diferente de métricas genéricas de Lighthouse ou PageSpeed que apenas apontam 
 - **Eficiência de Rede:** Contagem de requisições, cabeçalhos, ausência de compressão Gzip/Brotli e imagens pesadas.
 - **Classificação por Esforço de Correção:** Separação automática entre **⚡ Quick Wins** (vitórias rápidas de 1-2 dias), **🛠️ Médio Esforço** e **🏗️ Mudanças Estruturais**.
 - **Acompanhamento com Barra de Progresso em Tempo Real:** Visualização ao vivo do progresso das auditorias (percentual, contador de URLs processadas, URL atual sendo auditada e tempo decorrido).
+- **Resgate e Importação via Sitemap XML:** Descoberta automática de URLs via sitemap comum ou índices (`sitemapindex`), com suporte a compactação `.gz`, detecção de links duplicados e importação seletiva ou em massa com categorização inteligente.
 - **Exportação para Microsoft Planner:** Geração de relatórios com checklist e trechos de código prontos para colar ou anexar em tarefas da equipe.
 
 ---
@@ -76,7 +77,7 @@ Para evitar conflitos com outros serviços locais no WSL:
 ### 2. Clonar o Projeto
 No terminal do WSL:
 ```bash
-git clone <url-do-repositorio>
+git clone **[https://github.com/fevooduck/yellowlab-tracker](https://github.com/fevooduck/yellowlab-tracker)**
 cd yellowlab-tracker
 ```
 
@@ -99,6 +100,48 @@ Abra no seu navegador:
 
 ---
 
+## 🔄 Como Atualizar para uma Nova Versão (Para quem já baixou o projeto)
+
+Se você já possui o **YellowLab Tracker** instalado e rodando na sua máquina, siga este passo a passo para atualizar o seu ambiente assim que a nova versão estiver disponível na branch principal (`main` ou `master`).
+
+> 🛡️ **Garantia de Preservação dos Dados:**
+> Todo o seu histórico de auditorias, pontuações, domínios e URLs cadastradas **permanece 100% intacto**. O banco de dados PostgreSQL vive isolado no volume persistente do Docker (`postgres_data`) e os relatórios ficam salvos na pasta local `ylt_reports/`.
+
+---
+
+### Passo a Passo de Atualização (Terminal WSL / Linux)
+
+#### 1. Puxar a nova versão da branch principal
+Na pasta raiz do projeto:
+```bash
+git checkout main
+git pull origin main
+```
+*(Caso o repositório utilize a branch `master`, basta usar `git checkout master && git pull origin master`)*
+
+#### 2. Reconstruir a aplicação com a nova versão
+Execute o comando abaixo para atualizar as dependências e o código da aplicação:
+```bash
+docker compose up -d --build
+```
+> 💡 **Dica (opcional):** Se preferir reconstruir somente o container da aplicação sem reiniciar o PostgreSQL:
+> ```bash
+> docker compose up -d --build app
+> ```
+
+As migrações do banco de dados são aplicadas **automaticamente** na inicialização do backend.
+
+Pronto! Acesse **[http://localhost:3020](http://localhost:3020)** e a nova versão já estará ativa com todas as novidades e seus dados anteriores preservados.
+
+---
+
+### ⚠️ O que você NUNCA deve rodar:
+- **NUNCA execute `docker compose down -v`** (ou `docker compose down --volumes`).
+  - O parâmetro `-v` instrui o Docker a deletar os volumes de dados persistentes, o que apagaria permanentemente o banco de dados.
+- O comando padrão `docker compose up -d --build` (ou apenas `docker compose down` sem a flag `-v`) **não remove volumes** e é 100% seguro.
+
+---
+
 ## 📖 Guia de Uso para o Time de Desenvolvimento
 
 ### 1. Cadastrando um Domínio
@@ -106,9 +149,17 @@ Abra no seu navegador:
 2. Preencha o host principal (ex: `minhaloja.com.br`) e o rótulo do projeto.
 3. Salve para criar o agrupador de páginas.
 
-### 2. Adicionando URLs (Individual ou em Massa)
+### 2. Adicionando URLs (Individual, em Lote ou via Sitemap XML)
 - **Individual:** Dentro do domínio, clique em **Nova URL** e insira a página com sua respectiva categoria (Home, Categoria, Produto, Checkout, etc.).
-- **Em Massa (Lote):** Clique em **Importar Lote** e cole uma lista de 10, 20 ou mais URLs (uma por linha). A ferramenta ignora duplicidades e cadastra tudo em lote instantaneamente.
+- **Em Massa (Lote Manual):** Clique em **Importar Lote** e cole uma lista de URLs (uma por linha). A ferramenta ignora duplicidades e cadastra tudo em lote instantaneamente.
+- **Resgate Automático por Sitemap XML:** Clique em **Resgatar Sitemap** no topo do domínio (ou através do atalho no modal de lote ou no estado vazio).
+  1. A URL do sitemap vem pré-preenchida com `https://<dominio>/sitemap.xml` (suporta qualquer link de sitemap ou arquivos compactados `.xml.gz`).
+  2. Suporta **índices de sitemap** (`sitemapindex`): você pode carregar todos os sub-sitemaps automaticamente ou inspecionar um a um (ex: produtos, categorias, posts).
+  3. O sistema cruza os links do sitemap com o banco de dados e destaca quais são **novos** e quais **já estão cadastrados**.
+  4. Use os botões de seleção rápida para:
+     - **Importar Todas as Novas**: cadastra todas as páginas não existentes com 1 clique.
+     - **Importar Selecionadas**: marque apenas as páginas desejadas via checkboxes.
+  5. As categorias são sugeridas de forma inteligente com base na URL (`Home`, `Produto`, `Categoria`, `Carrinho`, etc.), com opção de forçar uma categoria única para o lote caso prefira.
 
 ### 3. Disparando Auditorias
 - **Auditoria de URL Específica:** Clique no botão **Analisar** ao lado de qualquer link. O Chromium headless carregará a página e gerará a pontuação em segundos.
