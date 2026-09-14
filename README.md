@@ -77,7 +77,7 @@ Para evitar conflitos com outros serviços locais no WSL:
 ### 2. Clonar o Projeto
 No terminal do WSL:
 ```bash
-git clone <url-do-repositorio>
+git clone **[https://github.com/fevooduck/yellowlab-tracker](https://github.com/fevooduck/yellowlab-tracker)**
 cd yellowlab-tracker
 ```
 
