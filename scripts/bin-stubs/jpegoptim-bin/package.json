@@ -1,0 +1,7 @@
+{
+  "name": "jpegoptim-bin",
+  "version": "99.0.0",
+  "private": true,
+  "description": "Stub local: usa o jpegoptim do sistema (apt) em vez de baixar/compilar binário no npm install",
+  "main": "index.js"
+}
