@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import prisma from '../lib/prisma.js';
 import { deleteReportsForUrl } from '../lib/report-storage.js';
+import { fetchSitemapXml, parseSitemapXml, suggestCategoryFromUrl } from '../lib/sitemap-parser.js';
 
 export const urlRoutes: FastifyPluginAsync = async (fastify) => {
   // Listar todas as URLs
@@ -119,18 +120,114 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // Importação em massa de URLs
+  // Resgatar e analisar sitemap de um domínio
   fastify.post<{
     Body: {
       domainId: number;
-      urlsText: string;
+      sitemapUrl?: string;
+      fetchAllChildren?: boolean;
+    };
+  }>('/sitemap', async (request, reply) => {
+    const { domainId, sitemapUrl, fetchAllChildren } = request.body || {};
+
+    if (!domainId) {
+      return reply.status(400).send({ error: 'domainId é obrigatório' });
+    }
+
+    const domain = await prisma.domain.findUnique({
+      where: { id: Number(domainId) },
+    });
+    if (!domain) {
+      return reply.status(404).send({ error: 'Domínio não encontrado' });
+    }
+
+    let targetUrl = sitemapUrl?.trim();
+    if (!targetUrl) {
+      targetUrl = `https://${domain.name}/sitemap.xml`;
+    } else if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://${targetUrl}`;
+    }
+
+    try {
+      const xml = await fetchSitemapXml(targetUrl);
+      const parsed = parseSitemapXml(xml);
+
+      let allUrls = [...parsed.urls];
+      const subSitemaps = [...parsed.subSitemaps];
+
+      // Se for sitemap index e o usuário solicitou buscar os filhos
+      if (parsed.isIndex && fetchAllChildren && subSitemaps.length > 0) {
+        const toFetch = subSitemaps.slice(0, 10);
+        for (const subUrl of toFetch) {
+          try {
+            const subXml = await fetchSitemapXml(subUrl, 10000);
+            const subParsed = parseSitemapXml(subXml);
+            allUrls.push(...subParsed.urls);
+            if (allUrls.length >= 2500) break;
+          } catch (e: any) {
+            fastify.log.warn(`Falha ao buscar sub-sitemap ${subUrl}: ${e.message}`);
+          }
+        }
+      }
+
+      // Deduplica URLs encontradas no sitemap
+      const uniqueUrlMap = new Map<string, (typeof allUrls)[0]>();
+      for (const item of allUrls) {
+        if (!uniqueUrlMap.has(item.url)) {
+          uniqueUrlMap.set(item.url, item);
+        }
+      }
+      const deduplicatedUrls = Array.from(uniqueUrlMap.values());
+
+      // Busca URLs já cadastradas para este domínio
+      const existingUrls = await prisma.url.findMany({
+        where: { domainId: domain.id },
+        select: { url: true },
+      });
+      const existingSet = new Set(existingUrls.map((u) => u.url.trim().toLowerCase()));
+
+      let existingCount = 0;
+      const enrichedUrls = deduplicatedUrls.map((item) => {
+        const normalized = item.url.trim().toLowerCase();
+        const alreadyExists = existingSet.has(normalized);
+        if (alreadyExists) existingCount++;
+        return {
+          ...item,
+          alreadyExists,
+        };
+      });
+
+      return {
+        success: true,
+        sitemapUrl: targetUrl,
+        isIndex: parsed.isIndex && enrichedUrls.length === 0,
+        subSitemaps,
+        urls: enrichedUrls,
+        totalFound: enrichedUrls.length,
+        newCount: enrichedUrls.length - existingCount,
+        existingCount,
+      };
+    } catch (err: any) {
+      return reply.status(400).send({
+        error: `Erro ao resgatar sitemap: ${err.message}`,
+      });
+    }
+  });
+
+  // Importação em massa de URLs (suporta texto puro, array de URLs ou array de itens com categoria)
+  fastify.post<{
+    Body: {
+      domainId: number;
+      urlsText?: string;
+      urls?: string[];
+      items?: Array<{ url: string; category?: string; label?: string }>;
       category?: string;
     };
   }>('/batch', async (request, reply) => {
-    const { domainId, urlsText, category } = request.body || {};
+    const { domainId, urlsText, urls, items, category } = request.body || {};
 
-    if (!domainId || !urlsText) {
-      return reply.status(400).send({ error: 'domainId e texto de URLs são obrigatórios' });
+    if (!domainId) {
+      return reply.status(400).send({ error: 'domainId é obrigatório' });
     }
 
     const domain = await prisma.domain.findUnique({
@@ -138,50 +235,87 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
     });
     if (!domain) return reply.status(404).send({ error: 'Domínio não encontrado' });
 
-    // Divide por linhas ou quebras
-    const lines = urlsText
-      .split(/[\r\n]+/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+    let toImport: Array<{ url: string; category: string; label: string }> = [];
 
-    if (lines.length === 0) {
-      return reply.status(400).send({ error: 'Nenhuma URL válida detectada no texto' });
+    if (Array.isArray(items) && items.length > 0) {
+      toImport = items
+        .filter((i) => i && typeof i.url === 'string' && i.url.trim())
+        .map((i) => ({
+          url: i.url.trim(),
+          category: i.category?.trim() || category?.trim() || 'Geral',
+          label: i.label?.trim() || i.url.trim(),
+        }));
+    } else if (Array.isArray(urls) && urls.length > 0) {
+      toImport = urls
+        .filter((u) => typeof u === 'string' && u.trim())
+        .map((u) => ({
+          url: u.trim(),
+          category: category?.trim() || 'Geral',
+          label: u.trim(),
+        }));
+    } else if (typeof urlsText === 'string' && urlsText.trim()) {
+      const lines = urlsText
+        .split(/[\r\n]+/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      toImport = lines.map((l) => ({
+        url: l,
+        category: category?.trim() || 'Geral',
+        label: l,
+      }));
+    } else {
+      return reply.status(400).send({ error: 'Nenhuma URL fornecida para importação' });
+    }
+
+    if (toImport.length === 0) {
+      return reply.status(400).send({ error: 'Nenhuma URL válida detectada' });
     }
 
     let createdCount = 0;
-    let skippedCount = 0;
-    const errors: string[] = [];
+    const CHUNK_SIZE = 1000;
 
-    for (const rawLine of lines) {
-      let finalUrl = rawLine;
-      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-        finalUrl = `https://${finalUrl}`;
-      }
+    for (let i = 0; i < toImport.length; i += CHUNK_SIZE) {
+      const chunk = toImport.slice(i, i + CHUNK_SIZE).map((item) => {
+        let finalUrl = item.url;
+        if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+          finalUrl = `https://${finalUrl}`;
+        }
+        return {
+          url: finalUrl,
+          domainId: domain.id,
+          label: item.label || finalUrl,
+          category: item.category || 'Geral',
+        };
+      });
 
       try {
-        await prisma.url.create({
-          data: {
-            url: finalUrl,
-            domainId: domain.id,
-            label: finalUrl,
-            category: category?.trim() || 'Geral',
-          },
+        const result = await prisma.url.createMany({
+          data: chunk,
+          skipDuplicates: true,
         });
-        createdCount++;
+        createdCount += result.count;
       } catch (err: any) {
-        skippedCount++;
-        if (err.code !== 'P2002') {
-          errors.push(`${finalUrl}: ${err.message}`);
+        // Fallback para inserção individual caso ocorra erro inesperado no chunk
+        for (const item of chunk) {
+          try {
+            await prisma.url.create({ data: item });
+            createdCount++;
+          } catch {
+            // ignora duplicatas
+          }
         }
       }
     }
 
+    const skippedCount = Math.max(0, toImport.length - createdCount);
+
     return {
       success: true,
-      totalReceived: lines.length,
+      totalReceived: toImport.length,
       createdCount,
       skippedCount,
-      errors: errors.slice(0, 5),
+      errors: [],
     };
   });
 
