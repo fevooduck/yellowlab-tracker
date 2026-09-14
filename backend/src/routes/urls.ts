@@ -149,32 +149,80 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      const xml = await fetchSitemapXml(targetUrl);
-      const parsed = parseSitemapXml(xml);
+      let xml = '';
+      let successfulUrl = targetUrl;
+
+      try {
+        xml = await fetchSitemapXml(targetUrl);
+      } catch (err: any) {
+        // Se a busca falhar com 404 e o alvo terminar com /sitemap.xml, tenta fallbacks comuns (como Yoast / WordPress)
+        const is404 = err.message && err.message.includes('404');
+        const isDefaultSitemap = targetUrl.endsWith('/sitemap.xml');
+
+        if (is404 && isDefaultSitemap) {
+          const fallbacks = [
+            targetUrl.replace(/\/sitemap\.xml$/, '/sitemap_index.xml'),
+            targetUrl.replace(/\/sitemap\.xml$/, '/wp-sitemap.xml'),
+          ];
+
+          let found = false;
+          for (const fallbackUrl of fallbacks) {
+            try {
+              xml = await fetchSitemapXml(fallbackUrl);
+              successfulUrl = fallbackUrl;
+              found = true;
+              break;
+            } catch {
+              // continua tentando os outros fallbacks
+            }
+          }
+
+          if (!found) {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+
+      const parsed = parseSitemapXml(xml, successfulUrl);
 
       let allUrls = [...parsed.urls];
       const subSitemaps = [...parsed.subSitemaps];
 
-      // Se for sitemap index e o usuário solicitou buscar os filhos
-      if (parsed.isIndex && fetchAllChildren && subSitemaps.length > 0) {
-        const toFetch = subSitemaps.slice(0, 10);
+      // Se houver sub-sitemaps e o usuário solicitou buscar os filhos
+      if (fetchAllChildren && subSitemaps.length > 0) {
+        const toFetch = subSitemaps.slice(0, 30);
         for (const subUrl of toFetch) {
           try {
-            const subXml = await fetchSitemapXml(subUrl, 10000);
-            const subParsed = parseSitemapXml(subXml);
+            const subXml = await fetchSitemapXml(subUrl, 15000);
+            const subParsed = parseSitemapXml(subXml, subUrl);
             allUrls.push(...subParsed.urls);
-            if (allUrls.length >= 2500) break;
+            if (allUrls.length >= 10000) break;
           } catch (e: any) {
             fastify.log.warn(`Falha ao buscar sub-sitemap ${subUrl}: ${e.message}`);
           }
         }
       }
 
+      // Normalizador auxiliar para comparar URLs ignorando barra final
+      const normalizeUrl = (u: string) => {
+        try {
+          const p = new URL(u.trim().toLowerCase());
+          let path = p.pathname;
+          if (path.endsWith('/') && path.length > 1) path = path.slice(0, -1);
+          return `${p.protocol}//${p.host}${path}${p.search}`;
+        } catch {
+          return u.trim().toLowerCase().replace(/\/+$/, '');
+        }
+      };
+
       // Deduplica URLs encontradas no sitemap
       const uniqueUrlMap = new Map<string, (typeof allUrls)[0]>();
       for (const item of allUrls) {
-        if (!uniqueUrlMap.has(item.url)) {
-          uniqueUrlMap.set(item.url, item);
+        const key = normalizeUrl(item.url);
+        if (!uniqueUrlMap.has(key)) {
+          uniqueUrlMap.set(key, item);
         }
       }
       const deduplicatedUrls = Array.from(uniqueUrlMap.values());
@@ -184,12 +232,12 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
         where: { domainId: domain.id },
         select: { url: true },
       });
-      const existingSet = new Set(existingUrls.map((u) => u.url.trim().toLowerCase()));
+      const existingSet = new Set(existingUrls.map((u) => normalizeUrl(u.url)));
 
       let existingCount = 0;
       const enrichedUrls = deduplicatedUrls.map((item) => {
-        const normalized = item.url.trim().toLowerCase();
-        const alreadyExists = existingSet.has(normalized);
+        const key = normalizeUrl(item.url);
+        const alreadyExists = existingSet.has(key);
         if (alreadyExists) existingCount++;
         return {
           ...item,
@@ -199,8 +247,8 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        sitemapUrl: targetUrl,
-        isIndex: parsed.isIndex && enrichedUrls.length === 0,
+        sitemapUrl: successfulUrl,
+        isIndex: subSitemaps.length > 0 && enrichedUrls.length === 0,
         subSitemaps,
         urls: enrichedUrls,
         totalFound: enrichedUrls.length,
@@ -223,7 +271,7 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
       items?: Array<{ url: string; category?: string; label?: string }>;
       category?: string;
     };
-  }>('/batch', async (request, reply) => {
+  }>('/batch', { bodyLimit: 50 * 1024 * 1024 }, async (request, reply) => {
     const { domainId, urlsText, urls, items, category } = request.body || {};
 
     if (!domainId) {
@@ -276,18 +324,27 @@ export const urlRoutes: FastifyPluginAsync = async (fastify) => {
     const CHUNK_SIZE = 1000;
 
     for (let i = 0; i < toImport.length; i += CHUNK_SIZE) {
-      const chunk = toImport.slice(i, i + CHUNK_SIZE).map((item) => {
-        let finalUrl = item.url;
+      const rawChunk = toImport.slice(i, i + CHUNK_SIZE);
+
+      // Deduplicação interna no próprio lote para evitar conflito de constraint no Postgres
+      const chunkMap = new Map<string, { url: string; domainId: number; label: string; category: string }>();
+
+      for (const item of rawChunk) {
+        let finalUrl = item.url.trim();
         if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
           finalUrl = `https://${finalUrl}`;
         }
-        return {
-          url: finalUrl,
-          domainId: domain.id,
-          label: item.label || finalUrl,
-          category: item.category || 'Geral',
-        };
-      });
+        if (!chunkMap.has(finalUrl)) {
+          chunkMap.set(finalUrl, {
+            url: finalUrl,
+            domainId: domain.id,
+            label: item.label?.trim() || finalUrl,
+            category: item.category?.trim() || 'Geral',
+          });
+        }
+      }
+
+      const chunk = Array.from(chunkMap.values());
 
       try {
         const result = await prisma.url.createMany({

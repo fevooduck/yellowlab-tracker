@@ -27,6 +27,22 @@ function decodeXmlEntities(str: string): string {
     .trim();
 }
 
+function resolveUrl(targetUrl: string, baseUrl?: string): string {
+  const clean = targetUrl.trim();
+  if (!clean) return '';
+  if (baseUrl) {
+    try {
+      return new URL(clean, baseUrl).href;
+    } catch {
+      // continua para fallback
+    }
+  }
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    return `https://${clean}`;
+  }
+  return clean;
+}
+
 export function suggestCategoryFromUrl(urlStr: string): string {
   try {
     const parsed = new URL(urlStr);
@@ -59,7 +75,7 @@ export function suggestCategoryFromUrl(urlStr: string): string {
   return 'Geral';
 }
 
-export async function fetchSitemapXml(url: string, timeoutMs = 15000): Promise<string> {
+export async function fetchSitemapXml(url: string, timeoutMs = 20000): Promise<string> {
   let finalUrl = url.trim();
   if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
     finalUrl = `https://${finalUrl}`;
@@ -71,11 +87,11 @@ export async function fetchSitemapXml(url: string, timeoutMs = 15000): Promise<s
   try {
     const res = await fetch(finalUrl, {
       signal: controller.signal,
+      redirect: 'follow',
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 YellowLabTracker/1.0',
-        Accept: 'application/xml, text/xml, application/xhtml+xml, text/html;q=0.9, */*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        Accept: 'application/xml, text/xml, application/xhtml+xml, text/html;q=0.9, text/plain;q=0.8, */*;q=0.7',
       },
     });
 
@@ -84,17 +100,12 @@ export async function fetchSitemapXml(url: string, timeoutMs = 15000): Promise<s
     }
 
     const buffer = Buffer.from(await res.arrayBuffer());
-    const contentEncoding = res.headers.get('content-encoding') || '';
-    const isGzip =
-      contentEncoding.includes('gzip') ||
-      finalUrl.toLowerCase().endsWith('.gz') ||
-      (buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b);
 
-    if (isGzip) {
+    // Se o buffer começar com os magic bytes do gzip (0x1f 0x8b), descomprime
+    if (buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
       try {
         return zlib.gunzipSync(buffer).toString('utf-8');
       } catch (err: any) {
-        // Se a descompressão falhar, tenta interpretar como texto plano
         return buffer.toString('utf-8');
       }
     }
@@ -104,51 +115,99 @@ export async function fetchSitemapXml(url: string, timeoutMs = 15000): Promise<s
     if (err.name === 'AbortError') {
       throw new Error(`Tempo limite excedido (${timeoutMs / 1000}s) ao resgatar sitemap em ${finalUrl}`);
     }
-    throw err;
+    const causeMsg = err.cause ? ` (${err.cause.message || err.cause})` : '';
+    throw new Error(`${err.message}${causeMsg}`);
   } finally {
     clearTimeout(timer);
   }
 }
 
-export function parseSitemapXml(xmlContent: string): SitemapParseResult {
-  const isIndex = /<sitemapindex[\s>]/i.test(xmlContent);
+export function parseSitemapXml(xmlContent: string, baseUrl?: string): SitemapParseResult {
+  if (!xmlContent || !xmlContent.trim()) {
+    return { isIndex: false, subSitemaps: [], urls: [] };
+  }
+
+  // Suporte a sitemaps em texto puro (.txt com uma URL por linha)
+  if (!xmlContent.includes('<') && (xmlContent.includes('http://') || xmlContent.includes('https://'))) {
+    const lines = xmlContent
+      .split(/[\r\n]+/)
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('http://') || l.startsWith('https://'));
+
+    const textUrls: SitemapUrlEntry[] = lines.map((u) => ({
+      url: u,
+      suggestedCategory: suggestCategoryFromUrl(u),
+    }));
+
+    return {
+      isIndex: false,
+      subSitemaps: [],
+      urls: textUrls,
+    };
+  }
+
+  // Remove comentários XML para evitar falsos positivos
+  const cleanXml = xmlContent.replace(/<!--[\s\S]*?-->/g, '');
+
+  const isIndexTag = /<(?:[a-zA-Z0-9_-]+:)?sitemapindex[\s>]/i.test(cleanXml);
   const subSitemaps: string[] = [];
   const urls: SitemapUrlEntry[] = [];
 
-  if (isIndex) {
-    // Extrai <sitemap>...<loc>...</loc>...</sitemap>
-    const sitemapBlocks = xmlContent.match(/<sitemap[\s>][\s\S]*?<\/sitemap>/gi) || [];
-    for (const block of sitemapBlocks) {
-      const locMatch = block.match(/<loc[\s>]([\s\S]*?)<\/loc>/i);
-      if (locMatch && locMatch[1]) {
-        const cleanLoc = decodeXmlEntities(locMatch[1]);
-        if (cleanLoc) {
-          subSitemaps.push(cleanLoc);
+  // Extrai blocos <sitemap>...<loc>...</loc>...</sitemap>
+  const sitemapBlocks = cleanXml.match(/<(?:[a-zA-Z0-9_-]+:)?sitemap\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?sitemap>/gi) || [];
+  for (const block of sitemapBlocks) {
+    const locMatch = block.match(/<(?:[a-zA-Z0-9_-]+:)?loc\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?loc>/i);
+    if (locMatch && locMatch[1]) {
+      const cleanLoc = decodeXmlEntities(locMatch[1]);
+      if (cleanLoc) {
+        const resolved = resolveUrl(cleanLoc, baseUrl);
+        if (resolved) subSitemaps.push(resolved);
+      }
+    }
+  }
+
+  // Extrai blocos <url>...<loc>...</loc>...</url>
+  const urlBlocks = cleanXml.match(/<(?:[a-zA-Z0-9_-]+:)?url\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?url>/gi) || [];
+  for (const block of urlBlocks) {
+    const locMatch = block.match(/<(?:[a-zA-Z0-9_-]+:)?loc\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?loc>/i);
+    if (locMatch && locMatch[1]) {
+      const cleanLoc = decodeXmlEntities(locMatch[1]);
+      if (cleanLoc) {
+        const resolved = resolveUrl(cleanLoc, baseUrl);
+        if (resolved) {
+          const lastmodMatch = block.match(/<(?:[a-zA-Z0-9_-]+:)?lastmod\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?lastmod>/i);
+          const lastmod = lastmodMatch && lastmodMatch[1] ? decodeXmlEntities(lastmodMatch[1]) : undefined;
+          urls.push({
+            url: resolved,
+            lastmod,
+            suggestedCategory: suggestCategoryFromUrl(resolved),
+          });
         }
       }
     }
   }
 
-  // Também tenta extrair <url>...<loc>...</loc> caso existam
-  const urlBlocks = xmlContent.match(/<url[\s>][\s\S]*?<\/url>/gi) || [];
-  for (const block of urlBlocks) {
-    const locMatch = block.match(/<loc[\s>]([\s\S]*?)<\/loc>/i);
-    if (locMatch && locMatch[1]) {
-      const cleanLoc = decodeXmlEntities(locMatch[1]);
-      if (cleanLoc) {
-        const lastmodMatch = block.match(/<lastmod[\s>]([\s\S]*?)<\/lastmod>/i);
-        const lastmod = lastmodMatch && lastmodMatch[1] ? decodeXmlEntities(lastmodMatch[1]) : undefined;
-        urls.push({
-          url: cleanLoc,
-          lastmod,
-          suggestedCategory: suggestCategoryFromUrl(cleanLoc),
-        });
+  // Fallback: se não encontrou nenhum bloco <url> nem <sitemap>, mas existem tags <loc> avulsas
+  if (sitemapBlocks.length === 0 && urlBlocks.length === 0) {
+    const standaloneLocMatches = cleanXml.matchAll(/<(?:[a-zA-Z0-9_-]+:)?loc\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_-]+:)?loc>/gi);
+    for (const match of standaloneLocMatches) {
+      if (match && match[1]) {
+        const cleanLoc = decodeXmlEntities(match[1]);
+        if (cleanLoc) {
+          const resolved = resolveUrl(cleanLoc, baseUrl);
+          if (resolved) {
+            urls.push({
+              url: resolved,
+              suggestedCategory: suggestCategoryFromUrl(resolved),
+            });
+          }
+        }
       }
     }
   }
 
   return {
-    isIndex: isIndex && urls.length === 0,
+    isIndex: (isIndexTag || subSitemaps.length > 0) && urls.length === 0,
     subSitemaps,
     urls,
   };
