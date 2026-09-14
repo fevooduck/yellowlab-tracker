@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   FileCode,
@@ -56,6 +56,12 @@ export default function SitemapImportModal({
 
   const [loadingFetch, setLoadingFetch] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
+  const [importProgress, setImportProgress] = useState<{
+    currentBatch: number;
+    totalBatches: number;
+    processedCount: number;
+    totalCount: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [fetchedData, setFetchedData] = useState<{
@@ -75,7 +81,19 @@ export default function SitemapImportModal({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW' | 'EXISTING'>('NEW');
   const [currentPage, setCurrentPage] = useState(1);
 
-  if (!isOpen) return null;
+  // Reset e inicialização limpa sempre que o modal for aberto ou o domínio mudar
+  useEffect(() => {
+    if (isOpen) {
+      const cleanHost = domainName.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+      setSitemapUrl(`https://${cleanHost}/sitemap.xml`);
+      setError(null);
+      setFetchedData(null);
+      setSelectedUrls(new Set());
+      setSearchFilter('');
+      setCurrentPage(1);
+      setImportProgress(null);
+    }
+  }, [isOpen, domainName]);
 
   const handleFetchSitemap = async (customUrl?: string) => {
     const urlToFetch = customUrl || sitemapUrl;
@@ -206,23 +224,43 @@ export default function SitemapImportModal({
     }
 
     setLoadingImport(true);
-    try {
-      const res = await fetch('/api/urls/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domainId,
-          items: itemsToImport,
-        }),
-      });
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    const CHUNK_SIZE = 1000;
+    const totalBatches = Math.ceil(itemsToImport.length / CHUNK_SIZE);
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Erro ao importar URLs.');
+    try {
+      for (let i = 0; i < itemsToImport.length; i += CHUNK_SIZE) {
+        const batch = itemsToImport.slice(i, i + CHUNK_SIZE);
+        const currentBatch = Math.floor(i / CHUNK_SIZE) + 1;
+
+        setImportProgress({
+          currentBatch,
+          totalBatches,
+          processedCount: Math.min(i + CHUNK_SIZE, itemsToImport.length),
+          totalCount: itemsToImport.length,
+        });
+
+        const res = await fetch('/api/urls/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domainId,
+            items: batch,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || `Erro no lote ${currentBatch} ao importar URLs.`);
+        }
+
+        totalCreated += data.createdCount || 0;
+        totalSkipped += data.skippedCount || 0;
       }
 
       toast.success(
-        `${data.createdCount} URLs importadas com sucesso! (${data.skippedCount} ignoradas/duplicadas)`
+        `${totalCreated.toLocaleString('pt-BR')} URLs importadas com sucesso! (${totalSkipped.toLocaleString('pt-BR')} ignoradas/duplicadas)`
       );
       onSuccess();
       onClose();
@@ -230,8 +268,11 @@ export default function SitemapImportModal({
       toast.error(err.message || 'Erro ao importar URLs.');
     } finally {
       setLoadingImport(false);
+      setImportProgress(null);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-sm">
@@ -307,12 +348,19 @@ export default function SitemapImportModal({
           {/* Sub-sitemaps detectados (caso existam) */}
           {fetchedData?.subSitemaps && fetchedData.subSitemaps.length > 0 && (
             <div className="mt-3 p-3 bg-slate-900/60 border border-slate-700/60 rounded-xl space-y-2">
-              <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                <FolderTree className="w-3.5 h-3.5 text-yellow-400" />
-                Sub-sitemaps encontrados ({fetchedData.subSitemaps.length}):
+              <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <FolderTree className="w-3.5 h-3.5 text-yellow-400" />
+                  Sub-sitemaps encontrados ({fetchedData.subSitemaps.length}):
+                </div>
+                {fetchedData.subSitemaps.length > 40 && (
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    Exibindo os primeiros 40 sub-sitemaps
+                  </span>
+                )}
               </div>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                {fetchedData.subSitemaps.map((sub, idx) => (
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                {fetchedData.subSitemaps.slice(0, 40).map((sub, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -556,24 +604,30 @@ export default function SitemapImportModal({
         {/* Rodapé de Ações */}
         <div className="p-4 sm:px-6 bg-slate-800/90 border-t border-slate-700 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs text-slate-400">
-            {fetchedData && (
+            {importProgress ? (
+              <span className="text-yellow-400 font-semibold flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                Importando lote {importProgress.currentBatch} de {importProgress.totalBatches} ({importProgress.processedCount.toLocaleString('pt-BR')} / {importProgress.totalCount.toLocaleString('pt-BR')} URLs)...
+              </span>
+            ) : fetchedData ? (
               <span>
                 {selectedUrls.size > 0 ? (
                   <>
-                    <strong className="text-yellow-400">{selectedUrls.size}</strong> URLs prontas para importar
+                    <strong className="text-yellow-400">{selectedUrls.size.toLocaleString('pt-BR')}</strong> URLs prontas para importar
                   </>
                 ) : (
                   'Nenhuma URL selecionada'
                 )}
               </span>
-            )}
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
               type="button"
+              disabled={loadingImport}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-700 text-xs font-semibold transition-colors"
+              className="px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-700 text-xs font-semibold transition-colors disabled:opacity-50"
             >
               Fechar
             </button>
@@ -585,7 +639,9 @@ export default function SitemapImportModal({
                 onClick={() => handleImport('ALL_NEW')}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
-                Importar Todas as Novas ({fetchedData.newCount.toLocaleString('pt-BR')})
+                {loadingImport && importProgress
+                  ? `Importando (${importProgress.processedCount}/${importProgress.totalCount})...`
+                  : `Importar Todas as Novas (${fetchedData.newCount.toLocaleString('pt-BR')})`}
               </button>
             )}
 

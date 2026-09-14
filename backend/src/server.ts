@@ -6,6 +6,7 @@ import { auditRoutes } from './routes/audit.js';
 
 const fastify = Fastify({
   logger: true,
+  bodyLimit: 50 * 1024 * 1024, // 50MB para importação em lote de grandes sitemaps
 });
 
 import prisma from './lib/prisma.js';
